@@ -1,4 +1,5 @@
 use derive_more::{Display, From};
+use rayon::prelude::*;
 use serde_yaml;
 
 use super::{
@@ -112,21 +113,74 @@ impl UserAgentParser {
     }
 
     pub fn try_from(regex_file: RegexFile) -> Result<UserAgentParser, Error> {
-        let mut device_matchers = Vec::new();
-        let mut os_matchers = Vec::new();
-        let mut user_agent_matchers = Vec::new();
+        let device_matchers = regex_file
+            .device_parsers
+            .into_par_iter()
+            .try_fold(
+                || Vec::new(),
+                |mut v, parser| -> Result<_, Error> {
+                    let matcher = device::Matcher::try_from(parser)?;
+                    v.push(matcher);
+                    Ok(v)
+                },
+            )
+            .try_reduce(
+                || Vec::new(),
+                |mut v1, v2| {
+                    v1.extend(v2);
+                    Ok(v1)
+                },
+            )?;
 
-        for parser in regex_file.device_parsers.into_iter() {
-            device_matchers.push(device::Matcher::try_from(parser)?);
-        }
+        let os_matchers = regex_file
+            .os_parsers
+            .into_par_iter()
+            .try_fold(
+                || Vec::new(),
+                |mut v, parser| -> Result<_, Error> {
+                    let matcher = os::Matcher::try_from(parser)?;
+                    v.push(matcher);
+                    Ok(v)
+                },
+            )
+            .try_reduce(
+                || Vec::new(),
+                |mut v1, v2| {
+                    v1.extend(v2);
+                    Ok(v1)
+                },
+            )?;
 
-        for parser in regex_file.os_parsers.into_iter() {
-            os_matchers.push(os::Matcher::try_from(parser)?);
-        }
+        let user_agent_matchers = regex_file
+            .user_agent_parsers
+            .into_par_iter()
+            .try_fold(
+                || Vec::new(),
+                |mut v, parser| -> Result<_, Error> {
+                    let matcher = user_agent::Matcher::try_from(parser)?;
+                    v.push(matcher);
+                    Ok(v)
+                },
+            )
+            .try_reduce(
+                || Vec::new(),
+                |mut v1, v2| {
+                    v1.extend(v2);
+                    Ok(v1)
+                },
+            )?;
 
-        for parser in regex_file.user_agent_parsers.into_iter() {
-            user_agent_matchers.push(user_agent::Matcher::try_from(parser)?);
-        }
+        // for parser in regex_file.device_parsers.into_iter() {
+        //     device_matchers.push(device::Matcher::try_from(parser)?);
+        // }
+
+        // for parser in regex_file.os_parsers.into_iter() {
+        //     os_matchers.push(os::Matcher::try_from(parser)?);
+        // }
+
+        // for parser in regex_file.user_agent_parsers.into_iter() {
+        //     user_agent_matchers.push(user_agent::Matcher::try_from(parser)?);
+        // }
 
         Ok(UserAgentParser {
             device_matchers,
